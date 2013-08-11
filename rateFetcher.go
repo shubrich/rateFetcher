@@ -7,6 +7,7 @@ import "encoding/json"
 import "database/sql"
 import _ "github.com/mattn/go-sqlite3"
 import "os"
+import "strings"
 
 func perror(err error) {
 	if err != nil {
@@ -33,30 +34,9 @@ func get_rates() {
 		}
 	}
 
-	mappedData := data.(map[string]interface{})
-	for k, v := range mappedData {
-		fmt.Println("Iterating over ", k)
-		mappedInnerData := v.(map[string]interface{})
-		for l, w := range mappedInnerData {
-			fmt.Println(l, " - ", w)
-		}
-	}
-}
-
-func main() {
-	os.Remove("./rates.db")
 	db, err := sql.Open("sqlite3", "./rates.db")
 	perror(err)
 	defer db.Close()
-
-	sqls := []string{
-		"create table rates (id integer not null primary key, fxpair text, fxrate real)",
-		"delete from rates",
-	}
-	for _, sql := range sqls {
-		_, err = db.Exec(sql)
-		perror(err)
-	}
 
 	tx, err := db.Begin()
 	perror(err)
@@ -65,11 +45,45 @@ func main() {
 	perror(err)
 
 	defer stmt.Close()
-	for i := 0; i < 100; i++ {
-		_, err := stmt.Exec(fmt.Sprintf("Test %03d", i), 1.234)
+
+	mappedData := data.(map[string]interface{})
+	for k, v := range mappedData {
+		fmt.Println("Iterating over ", k)
+		if !strings.EqualFold(k, "Ticks") {
+			continue
+		}
+
+		mappedInnerData := v.(map[string]interface{})
+		for l, w := range mappedInnerData {
+			fmt.Println("Inserting ", l, "with rate ", w)
+			_, err := stmt.Exec(l, w)
+			perror(err)
+		}
+	}
+
+	tx.Commit()
+}
+
+func prepare_database() {
+	if _, err := os.Stat("./rates.db"); err == nil {
+		return
+	}
+
+	db, err := sql.Open("sqlite3", "./rates.db")
+	perror(err)
+	defer db.Close()
+
+	sqls := []string{
+		"create table rates (id integer not null primary key, fxpair text, fxrate real, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)",
+		"delete from rates",
+	}
+	for _, sql := range sqls {
+		_, err = db.Exec(sql)
 		perror(err)
 	}
-	tx.Commit()
+}
 
-	// get_rates()
+func main() {
+	prepare_database()
+	get_rates()
 }
